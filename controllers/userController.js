@@ -11,8 +11,8 @@ const Complaint=require('../models/Complaint')
 
 
 const razorpay = new Razorpay({
-  key_id: 'rzp_test_6i5nQKZQNF4RNj',
-  key_secret: 'bu5DwShi4kj3oGx29dk14VW7'
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET
 });
 
 
@@ -47,7 +47,8 @@ const registerUser = async (req, res) => {
 
   const getFullCartDetails = async (req, res) => {
     try {
-      const { userid, lat, lng } = req.body;
+      const { lat, lng } = req.body;
+      const userid = req.user.id;
       
      
   
@@ -59,7 +60,11 @@ const registerUser = async (req, res) => {
       
 
       
-      const vendorid = user.cart[0]?.product.vendor.toString();
+      if (user.cart.length === 0) {
+        return res.json({ cart: [], subtotal: 0, discount: 0, deliveryCharge: 0, grandTotal: 0 });
+      }
+
+      const vendorid = user.cart[0].product.vendor.toString();
       // Fetch vendor details
       const vendor = await Vendor.findById(vendorid);
      
@@ -67,7 +72,11 @@ const registerUser = async (req, res) => {
       if (!vendor || !vendor.location) return res.status(404).json({ message: "Vendor location not found" });
   
       // Calculate Distance
-      const distance = calculateDistance(lat, lng, vendor.location.lat, vendor.location.lng);
+      const [vendorLng, vendorLat] = vendor.location.coordinates;
+      const hasCustomerLocation = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+      const distance = hasCustomerLocation
+        ? calculateDistance(Number(lat), Number(lng), vendorLat, vendorLng)
+        : 0;
   
       // Calculate Delivery Charge
       let deliveryCharge = 30;
@@ -123,7 +132,7 @@ const loginUser = async (req, res) => {
     if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
 
    
- const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+ const token = jwt.sign({ id: user._id, role: 'customer' }, process.env.JWT_SECRET, { expiresIn: "7d" });
     res.json({ token, user: { message:'login success',id: user._id, name: user.name, email: user.email,userType:'customer' } });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -133,7 +142,7 @@ const loginUser = async (req, res) => {
 // Get User Profile
 const getUserProfile = async (req, res) => {
   try {
-    const {userid} =req.params;
+    const userid = req.user.id;
    
     
     const user = await User.findById(userid).select('-password');
@@ -149,7 +158,8 @@ const getUserProfile = async (req, res) => {
 const updateUserProfile = async (req, res) => {
   try {
 
-    const {userid, name, email, phone, address } = req.body; // Add any other fields you want to update
+    const { name, email, phone, address } = req.body; // Add any other fields you want to update
+    const userid = req.user.id;
     console.log(req.body);
     
     const user = await User.findById(userid);
@@ -191,7 +201,8 @@ const changeUserPassword = async (req, res) => {
 
 const addToCart = async (req, res) => {
   try {
-    const { userid, productId } = req.body;
+    const { productId } = req.body;
+    const userid = req.user.id;
 
     // 1. Find the user
     const user = await User.findById(userid);
@@ -222,7 +233,7 @@ const addToCart = async (req, res) => {
 
 const clearCart = async (req, res) => {
   try {
-    const { userid } = req.body; // Get user ID from request body
+    const userid = req.user.id;
     const user = await User.findById(userid);
 
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -239,7 +250,8 @@ const clearCart = async (req, res) => {
 
 const removeFromCart = async (req, res) => {
   try {
-    const { userid, productId } = req.body;
+    const { productId } = req.body;
+    const userid = req.user.id;
 
     // Fetch user and check if exists
     const user = await User.findById(userid);
@@ -265,7 +277,7 @@ const removeFromCart = async (req, res) => {
 
 const getCart = async (req, res) => {
   try {
-    const { userid } = req.params;
+    const userid = req.user.id;
 
     const user = await User.findById(userid).populate({
       path: "cart.product", // Populate the product details inside the cart
@@ -288,7 +300,7 @@ const getCart = async (req, res) => {
 
 const updateCartItem = async (req, res) => {
   try {
-    const user = await User.findById(req.body.userid);
+    const user = await User.findById(req.user.id);
     
     
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -329,7 +341,7 @@ const placeOrder = async (req, res) => {
 
 const getOrderHistory = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
 
     const orders = await Order.find({ user: userId })
     .populate('user', 'name email phone')  
@@ -352,7 +364,7 @@ const cancelOrder = async (req, res) => {
     if (!order || order.user.toString() !== req.user.id)
       return res.status(400).json({ message: 'Order not found' });
 
-    order.status = 'Cancelled';
+    order.orderStatus = 'Cancelled';
     await order.save();
 
     res.json({ message: 'Order cancelled' });
@@ -401,11 +413,45 @@ const getNearbyVendors = async (req, res) => {
 
 const createOrder = async (req, res) => {
   try {
-    const { userId, vendorId, products, totalAmount } = req.body;
+    const { lat, lng } = req.body;
+    const userId = req.user.id;
+
+    const user = await User.findById(userId).populate('cart.product');
+    if (!user || user.cart.length === 0) {
+      return res.status(400).json({ message: 'Cart is empty.' });
+    }
+
+    const cartVendorId = user.cart[0].product.vendor.toString();
+    if (user.cart.some((item) => item.product.vendor.toString() !== cartVendorId)) {
+      return res.status(400).json({ message: 'Checkout supports one vendor per order.' });
+    }
+
+    const cartProducts = user.cart.map((item) => ({
+      productId: item.product._id,
+      quantity: item.quantity,
+    }));
+    const subtotal = user.cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const discount = subtotal > 500 ? 50 : subtotal > 300 ? 30 : 10;
+    const vendor = await Vendor.findById(cartVendorId);
+    if (!vendor || !vendor.location) {
+      return res.status(404).json({ message: 'Vendor location not found.' });
+    }
+
+    const [vendorLng, vendorLat] = vendor.location.coordinates;
+    const hasCustomerLocation = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+    const distance = hasCustomerLocation
+      ? calculateDistance(Number(lat), Number(lng), vendorLat, vendorLng)
+      : 0;
+
+    let deliveryCharge = 30;
+    if (distance > 10) {
+      deliveryCharge += Math.ceil((distance - 10) / 2) * 10;
+    }
+    const calculatedTotal = Math.max(0, subtotal + deliveryCharge - discount);
 
     // Create Razorpay order
     const options = {
-      amount: totalAmount * 100,  // Amount in paise (1 INR = 100 paise)
+      amount: Math.round(calculatedTotal * 100),  // Amount in paise (1 INR = 100 paise)
       currency: "INR", // Currency in INR
       receipt: `receipt_${Date.now()}`, // Unique receipt number for the order
       payment_capture: 1,  // 1 means automatic capture of payment after successful transaction
@@ -421,9 +467,9 @@ const createOrder = async (req, res) => {
     // You can save this order in your database, but this step is optional as you already have the order ID
     const order = new Order({
       user: userId,
-      vendor: vendorId,
-      products,
-      totalAmount,
+      vendor: cartVendorId,
+      products: cartProducts,
+      totalAmount: calculatedTotal,
       orderStatus: "Pending", // You can update this status as payment progresses
       razorpayOrderId: razorpayOrder.id,
     });
@@ -435,7 +481,8 @@ const createOrder = async (req, res) => {
     // Send the Razorpay order ID and payment key to frontend
     res.json({
       razorpayOrderId: razorpayOrder.id,
-      razorpayPaymentKey: 'rzp_test_6i5nQKZQNF4RNj', // This key will be used to complete payment on frontend
+      razorpayPaymentKey: process.env.RAZORPAY_KEY_ID,
+      totalAmount: calculatedTotal,
     });
   } catch (error) {
     console.error("Error creating Razorpay order:", error);
@@ -447,12 +494,9 @@ const createOrder = async (req, res) => {
 const saveOrder = async (req, res) => {
   try {
     const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
-    console.log(razorpay_payment_id, razorpay_order_id, razorpay_signature);
-    
-
     // Verify payment signature
     const generatedSignature = crypto
-      .createHmac("sha256", razorpay.key_secret)
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 
@@ -462,10 +506,11 @@ const saveOrder = async (req, res) => {
 
     // If the payment is verified, save the order status in your database
     const order = await Order.findOne({ razorpayOrderId: razorpay_order_id });
-    console.log(order);
-    
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
+    }
+    if (order.user.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied.' });
     }
 
     order.paymentStatus = "Successful";
@@ -496,7 +541,7 @@ const saveOrder = async (req, res) => {
 // In your backend controller (e.g., OrderController.js)
 const OrderRating = async (req, res) => {
   try {
-    const { orderId, rating } = req.body; // Receive orderId and rating from the request body
+  const { orderId, rating } = req.body; // Receive orderId and rating from the request body
   
     
     // Find the order by its ID
@@ -504,6 +549,9 @@ const OrderRating = async (req, res) => {
     
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
+    }
+    if (order.user.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied.' });
     }
 
     // Update the order with the new rating
@@ -562,7 +610,7 @@ const getRandomProducts = async (count) => {
 
 // Function to get popular vendors (sorted by rating)
 const getPopularVendors = async (count) => {
-  return await Vendor.find().sort({ AverageRating: -1 }).limit(count);
+  return await Vendor.find().sort({ averageRating: -1 }).limit(count);
 };
 
 
@@ -587,7 +635,7 @@ const viewProduct = async (req, res) => {
 const submitComplaint = async (req, res) => {
 try {
   const { description } = req.body;
-  const userId = req.body.id; // Get user from token
+  const userId = req.user.id;
 
   if (!description) {
     return res.status(400).json({ message: "Description is required." });

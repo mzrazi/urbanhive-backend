@@ -3,24 +3,25 @@ const { registerVendor, loginVendor, updateStoreDetails, addProduct, getVendorPr
 
 
 const router = express.Router();
+const { authMiddleware, requireRole } = require('../middleware/authMiddleware');
 
 // Vendor authentication
 router.post("/register", registerVendor);
 router.post("/login", loginVendor);
-router.get("/dashboard/:vendorId",getVendorStats)
+router.get("/dashboard/:vendorId", authMiddleware, requireRole('vendor'), getVendorStats)
 
 // Vendor store management
-router.put("/update", updateStoreDetails);
+router.put("/update", authMiddleware, requireRole('vendor'), updateStoreDetails);
 
 // Product management
-router.post("/add-Product", uploadImageMiddleware, addProduct);
+router.post("/add-product", authMiddleware, requireRole('vendor'), uploadImageMiddleware, addProduct);
 router.get("/products/:vendorId", getVendorProducts);
-router.get("/getproduct/:productId",getproduct)
-router.put("/update-product/:id", updateProduct);
-router.delete("/delete-product/:id", deleteProduct);
+router.get("/getproduct/:productId", authMiddleware, requireRole('vendor'), getproduct)
+router.put("/update-product/:id", authMiddleware, requireRole('vendor'), updateProduct);
+router.delete("/delete-product/:id", authMiddleware, requireRole('vendor'), deleteProduct);
 
 // Order management
-router.get("/get-orders/:id", getVendorOrders);
-router.put("/order/:id", updateOrderStatus);
+router.get("/get-orders/:id", authMiddleware, requireRole('vendor'), getVendorOrders);
+router.put("/order/:id", authMiddleware, requireRole('vendor'), updateOrderStatus);
 
 module.exports = router;

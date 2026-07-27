@@ -88,10 +88,12 @@ const loginVendor = async (req, res) => {
       }
   
       // Generate a JWT token
-      const token = jwt.sign({ id: vendor._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+      const token = jwt.sign({ id: vendor._id, role: 'vendor' }, process.env.JWT_SECRET, { expiresIn: "7d" });
   
       // Return the token and vendor details
-      res.json({ token, user: { ...vendor.toObject(), userType: 'vendor' } });
+      const vendorData = vendor.toObject();
+      delete vendorData.password;
+      res.json({ token, user: { ...vendorData, userType: 'vendor' } });
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ message: "Server error" });
@@ -102,7 +104,10 @@ const loginVendor = async (req, res) => {
 // Update Store Details
 const updateStoreDetails = async (req, res) => {
     try {
-        const vendor = await Vendor.findByIdAndUpdate(req.user.id, req.body, { new: true });
+        const { storeName, storeAddress, phone, category, location } = req.body;
+        const updates = { storeName, storeAddress, phone, category, location };
+        Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
+        const vendor = await Vendor.findByIdAndUpdate(req.user.id, updates, { new: true }).select('-password');
         res.json({ message: "Store details updated", vendor });
     } catch (error) {
         res.status(500).json({ message: "Server error" });
@@ -112,7 +117,7 @@ const updateStoreDetails = async (req, res) => {
 // Add Product
 const addProduct = async (req, res) => {
   try {
-      const { name, price, description,category,id } = req.body;
+      const { name, price, description, category } = req.body;
 
       // Check if an image is uploaded
       let imageUrl = "";
@@ -126,7 +131,7 @@ const addProduct = async (req, res) => {
           price, 
           category,
           description, 
-          vendor: id, 
+          vendor: req.user.id,
           image: imageUrl 
       });
 
@@ -170,9 +175,17 @@ const getVendorProducts = async (req, res) => {
 
 // Update Product
 const updateProduct = async (req, res) => {
-    try {console.log(req.body);
-    
-        const updatedProduct = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    try {
+        const product = await Product.findById(req.params.id);
+        if (!product) return res.status(404).json({ message: 'Product not found' });
+        if (product.vendor.toString() !== req.user.id) {
+          return res.status(403).json({ message: 'Access denied.' });
+        }
+
+        const { name, price, description, category } = req.body;
+        const updates = { name, price, description, category };
+        Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
+        const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updates, { new: true });
         
         res.json({ message: "Product updated", product: updatedProduct });
     } catch (error) {
@@ -185,7 +198,13 @@ const updateProduct = async (req, res) => {
 // Delete Product
 const deleteProduct = async (req, res) => {
     try {
-        await Product.findByIdAndDelete(req.params.id);
+        const product = await Product.findById(req.params.id);
+        if (!product) return res.status(404).json({ message: 'Product not found' });
+        if (product.vendor.toString() !== req.user.id) {
+          return res.status(403).json({ message: 'Access denied.' });
+        }
+
+        await product.deleteOne();
         res.json({ message: "Product deleted" });
     } catch (error) {
         res.status(500).json({ message: "Server error" });
@@ -195,7 +214,7 @@ const deleteProduct = async (req, res) => {
 // Get Vendor Orders
 const getVendorOrders = async (req, res) => {
     try {
-        const orders = await Order.find({ vendor: req.params.id }).populate("products.productId");
+        const orders = await Order.find({ vendor: req.user.id }).populate("products.productId");
       
       
         res.json(orders);
@@ -208,7 +227,15 @@ const getVendorOrders = async (req, res) => {
 // Update Order Status
 const updateOrderStatus = async (req, res) => {
     try {
-        const updatedOrder = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const order = await Order.findById(req.params.id);
+        if (!order) return res.status(404).json({ message: 'Order not found' });
+        if (order.vendor.toString() !== req.user.id) {
+          return res.status(403).json({ message: 'Access denied.' });
+        }
+
+        order.orderStatus = req.body.orderStatus;
+        await order.save();
+        const updatedOrder = order;
         res.json({ message: "Order status updated", order: updatedOrder });
     } catch (error) {
         res.status(500).json({ message: "Server error" });
@@ -219,6 +246,10 @@ const getproduct = async(req,res)=>{
   try {
 
     const product=await Product.findById(req.params.productId);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    if (product.vendor.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
     res.json({ message: "product fetched", product });
     
   } catch (error) {
@@ -227,7 +258,7 @@ const getproduct = async(req,res)=>{
 }
 const getVendorStats = async (req, res) => {
   try {
-    const { vendorId } = req.params;
+    const vendorId = req.user.id;
 
     // 1. Find vendor by ID
     const vendor = await Vendor.findById(vendorId);

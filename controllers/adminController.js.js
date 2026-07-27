@@ -5,13 +5,14 @@ const User = require('../models/User');
 const Product = require('../models/Product');
 const Review = require('../models/Review');
 const nodemailer = require('nodemailer');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 // 📌 Configure Nodemailer Transport
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'urbanhiveonlinee@gmail.com', 
-    pass: 'uyqo vrar wtlu dopq'  
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_APP_PASSWORD
   }
 });
 
@@ -31,14 +32,14 @@ const adminLogin = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
   }
 
-  // If login is successful, set a session or send a success response
-  res.json({ message: 'Login successful' });
+  const token = jwt.sign({ role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  res.json({ message: 'Login successful', token });
 };
 
 // 📌 Vendor Management
 const getVendors = async (req, res) => {
   try {
-    const vendors = await Vendor.find();
+    const vendors = await Vendor.find().select('-password');
     res.status(200).json(vendors);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching vendors', error });
@@ -62,7 +63,7 @@ const updateVendorStatus = async (req, res) => {
 
       try {
         await transporter.sendMail({
-          from: 'urbanhiveonlinee@gmail.com',
+          from: process.env.MAIL_USER,
           to: vendorEmail,
           subject: 'Vendor Approval',
           text: `Congratulations! Your vendor application has been approved.`,
@@ -78,7 +79,7 @@ const updateVendorStatus = async (req, res) => {
 
       try {
         await transporter.sendMail({
-          from: 'urbanhiveonlinee@gmail.com',
+          from: process.env.MAIL_USER,
           to: vendorEmail,
           subject: 'Vendor Rejection',
           text: `We regret to inform you that your vendor application has been rejected.`,
@@ -142,7 +143,7 @@ const deleteComplaint = async (req, res) => {
 // 📌 Order Management
 const getOrders = async (req, res) => {
   try {
-    const orders = await Order.find().populate('user').populate('vendor');
+    const orders = await Order.find().populate('user', '-password').populate('vendor', '-password');
     res.status(200).json(orders);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching orders', error });
@@ -183,7 +184,7 @@ const deleteOrder = async (req, res) => {
 // 📌 User Management
 const getUsers = async (req, res) => {
   try {
-    const users = await User.find();
+    const users = await User.find().select('-password');
     res.status(200).json(users);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching users', error });
@@ -261,7 +262,7 @@ const deleteProduct = async (req, res) => {
 // 📌 Review Management
 const getReviews = async (req, res) => {
   try {
-    const reviews = await Review.find().populate('user').populate('product');
+    const reviews = await Review.find().populate('user', '-password').populate('product');
     res.status(200).json(reviews);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching reviews', error });

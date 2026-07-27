@@ -10,8 +10,11 @@ const {
   adminLogin
 }  = require('../controllers/adminController.js');
 const router = express.Router();
+const { authMiddleware, requireRole } = require('../middleware/authMiddleware');
 
 router.post('/login',adminLogin)
+
+router.use(authMiddleware, requireRole('admin'));
 
 // 📌 Vendor Routes
 router.get('/vendors', getVendors);
