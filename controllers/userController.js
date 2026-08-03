@@ -613,6 +613,26 @@ const getPopularVendors = async (count) => {
   return await Vendor.find().sort({ averageRating: -1 }).limit(count);
 };
 
+const searchMarketplace = async (req, res) => {
+  try {
+    const query = String(req.query.q || '').trim();
+    const category = String(req.query.category || '').trim();
+    if (!query && !category) return res.json({ products: [], vendors: [] });
+
+    const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const matcher = safeQuery ? new RegExp(safeQuery, 'i') : null;
+    const productFilter = { ...(category ? { category: new RegExp(`^${category}$`, 'i') } : {}), ...(matcher ? { $or: [{ name: matcher }, { category: matcher }, { description: matcher }] } : {}) };
+    const vendorFilter = { ...(category ? { category: new RegExp(`^${category}$`, 'i') } : {}), ...(matcher ? { $or: [{ storeName: matcher }, { name: matcher }, { category: matcher }, { storeAddress: matcher }] } : {}) };
+    const [products, vendors] = await Promise.all([
+      Product.find(productFilter).populate('vendor', 'storeName category storeAddress').limit(24),
+      Vendor.find(vendorFilter).sort({ averageRating: -1 }).limit(24),
+    ]);
+    res.json({ products, vendors });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not search the marketplace.' });
+  }
+};
+
 
 const viewProduct = async (req, res) => {
   try {
@@ -680,5 +700,5 @@ module.exports = {
   cancelOrder,
   updateCartItem,
   clearCart,getFullCartDetails
-  ,OrderRating ,viewProduct
+  ,OrderRating ,viewProduct, searchMarketplace
 };

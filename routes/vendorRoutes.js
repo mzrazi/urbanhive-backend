@@ -4,10 +4,13 @@ const { registerVendor, loginVendor, updateStoreDetails, addProduct, getVendorPr
 
 const router = express.Router();
 const { authMiddleware, requireRole } = require('../middleware/authMiddleware');
+const passwordResetController = require('../controllers/passwordResetController');
 
 // Vendor authentication
 router.post("/register", registerVendor);
 router.post("/login", loginVendor);
+router.post('/forgot-password', (req, res) => { req.body.accountType = 'vendor'; return passwordResetController.forgotPassword(req, res); });
+router.post('/reset-password', (req, res) => { req.body.accountType = 'vendor'; return passwordResetController.resetPassword(req, res); });
 router.get("/dashboard/:vendorId", authMiddleware, requireRole('vendor'), getVendorStats)
 
 // Vendor store management

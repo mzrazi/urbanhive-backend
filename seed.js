@@ -57,12 +57,12 @@ const seed = async () => {
   });
 
   const products = await Promise.all([
-    upsertProduct({ name: 'Organic Bananas', vendor: freshMart._id, price: 60, category: 'Grocery', description: 'Fresh, naturally ripened bananas.', image: '/uploads/1742372138194.jpg' }),
-    upsertProduct({ name: 'Farm Fresh Tomatoes', vendor: freshMart._id, price: 45, category: 'Grocery', description: 'Juicy tomatoes sourced from local farms.', image: '/uploads/1742372179190.jpg' }),
-    upsertProduct({ name: 'Artisan Sourdough', vendor: freshMart._id, price: 110, category: 'Grocery', description: 'Freshly baked sourdough bread.', image: '/uploads/1742372868188.jpg' }),
-    upsertProduct({ name: 'Classic Linen Shirt', vendor: urbanStyle._id, price: 1299, category: 'Clothing', description: 'A breathable everyday linen shirt.', image: '/uploads/1742372974443.jpg' }),
-    upsertProduct({ name: 'Everyday Tote Bag', vendor: urbanStyle._id, price: 799, category: 'Clothing', description: 'A durable canvas tote for daily use.', image: '/uploads/1742373402440.jpg' }),
-    upsertProduct({ name: 'Minimal Cotton Tee', vendor: urbanStyle._id, price: 599, category: 'Clothing', description: 'Soft cotton tee in a relaxed fit.', image: '/uploads/1742373473143.jpg' }),
+    upsertProduct({ name: 'Organic Bananas', vendor: freshMart._id, price: 60, category: 'Grocery', description: 'Fresh, naturally ripened bananas.', image: 'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=900&q=80' }),
+    upsertProduct({ name: 'Farm Fresh Tomatoes', vendor: freshMart._id, price: 45, category: 'Grocery', description: 'Juicy tomatoes sourced from local farms.', image: 'https://images.unsplash.com/photo-1546470427-e212b9d5604?auto=format&fit=crop&w=900&q=80' }),
+    upsertProduct({ name: 'Artisan Sourdough', vendor: freshMart._id, price: 110, category: 'Grocery', description: 'Freshly baked sourdough bread.', image: 'https://images.unsplash.com/photo-1585478259715-876a8b9b02aa?auto=format&fit=crop&w=900&q=80' }),
+    upsertProduct({ name: 'Classic Linen Shirt', vendor: urbanStyle._id, price: 1299, category: 'Clothing', description: 'A breathable everyday linen shirt.', image: 'https://images.unsplash.com/photo-1603252109303-2751441dd157?auto=format&fit=crop&w=900&q=80' }),
+    upsertProduct({ name: 'Everyday Tote Bag', vendor: urbanStyle._id, price: 799, category: 'Clothing', description: 'A durable canvas tote for daily use.', image: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=900&q=80' }),
+    upsertProduct({ name: 'Minimal Cotton Tee', vendor: urbanStyle._id, price: 599, category: 'Clothing', description: 'Soft cotton tee in a relaxed fit.', image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80' }),
   ]);
 
   await Vendor.findByIdAndUpdate(freshMart._id, { products: products.slice(0, 3).map((product) => product._id) });

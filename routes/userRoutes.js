@@ -1,11 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
+const passwordResetController = require('../controllers/passwordResetController');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
 // Authentication
 router.post('/register', userController.registerUser);
 router.post('/login', userController.loginUser);
+router.post('/forgot-password', (req, res) => { req.body.accountType = 'customer'; return passwordResetController.forgotPassword(req, res); });
+router.post('/reset-password', (req, res) => { req.body.accountType = 'customer'; return passwordResetController.resetPassword(req, res); });
 
 // Profile Management
 router.get('/profile/:userid', authMiddleware, userController.getUserProfile);
@@ -35,6 +38,7 @@ router.get("/homepage", async (req, res) => {
   });
 
 router.get("/nearby", userController.getNearbyVendors);
+router.get('/search', userController.searchMarketplace);
 router.post("/complaint", authMiddleware, userController.submitComplaint)
 // Order Management
 router.put('/order-rating', authMiddleware, userController.OrderRating);
