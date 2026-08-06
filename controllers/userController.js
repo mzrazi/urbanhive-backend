@@ -79,10 +79,7 @@ const registerUser = async (req, res) => {
         : 0;
   
       // Calculate Delivery Charge
-      let deliveryCharge = 30;
-      if (distance > 10) {
-        deliveryCharge += Math.ceil((distance - 10) / 2) * 10;
-      }
+      const deliveryCharge = calculateDeliveryCharge(distance);
   
       // Calculate Subtotal & Discount
       const subtotal = user.cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
@@ -114,6 +111,10 @@ const registerUser = async (req, res) => {
         Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c; // Distance in KM
+  };
+  const calculateDeliveryCharge = (distance) => {
+    if (!Number.isFinite(distance) || distance <= 5) return 30;
+    return Math.min(99, 30 + Math.ceil((distance - 5) / 2) * 10);
   };
   
   
@@ -443,10 +444,7 @@ const createOrder = async (req, res) => {
       ? calculateDistance(Number(lat), Number(lng), vendorLat, vendorLng)
       : 0;
 
-    let deliveryCharge = 30;
-    if (distance > 10) {
-      deliveryCharge += Math.ceil((distance - 10) / 2) * 10;
-    }
+    const deliveryCharge = calculateDeliveryCharge(distance);
     const calculatedTotal = Math.max(0, subtotal + deliveryCharge - discount);
 
     // Create Razorpay order
@@ -669,7 +667,16 @@ try {
   console.error(error);
   res.status(500).json({ message: "Server Error" });
 }
-}
+};
+
+const getComplaintHistory = async (req, res) => {
+  try {
+    const complaints = await Complaint.find({ user: req.user.id }).sort({ createdAt: -1 });
+    res.json(complaints);
+  } catch (error) {
+    res.status(500).json({ message: 'Could not load complaint history.' });
+  }
+};
 
 
 
@@ -682,7 +689,7 @@ try {
 
 // Export all functions
 module.exports = {
-  submitComplaint,
+  submitComplaint, getComplaintHistory,
   getRandomProducts,getPopularVendors,
   saveOrder,
   createOrder,

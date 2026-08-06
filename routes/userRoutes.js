@@ -40,6 +40,7 @@ router.get("/homepage", async (req, res) => {
 router.get("/nearby", userController.getNearbyVendors);
 router.get('/search', userController.searchMarketplace);
 router.post("/complaint", authMiddleware, userController.submitComplaint)
+router.get('/complaints', authMiddleware, userController.getComplaintHistory)
 // Order Management
 router.put('/order-rating', authMiddleware, userController.OrderRating);
 router.get('/order-history/:userId', authMiddleware, userController.getOrderHistory);

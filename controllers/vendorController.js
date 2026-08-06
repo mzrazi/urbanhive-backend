@@ -114,6 +114,16 @@ const updateStoreDetails = async (req, res) => {
     }
 };
 
+const getVendorProfile = async (req, res) => {
+  try {
+    const vendor = await Vendor.findById(req.user.id).select('-password -passwordResetToken -passwordResetExpires');
+    if (!vendor) return res.status(404).json({ message: 'Vendor not found' });
+    res.json(vendor);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // Add Product
 const addProduct = async (req, res) => {
   try {
@@ -300,4 +310,4 @@ const getVendorStats = async (req, res) => {
 
  
 
-module.exports = {getVendorStats, getproduct,uploadImageMiddleware , registerVendor, loginVendor, updateStoreDetails, addProduct, getVendorProducts, updateProduct, deleteProduct, getVendorOrders, updateOrderStatus };
+module.exports = {getVendorStats, getproduct,uploadImageMiddleware , registerVendor, loginVendor, updateStoreDetails, getVendorProfile, addProduct, getVendorProducts, updateProduct, deleteProduct, getVendorOrders, updateOrderStatus };

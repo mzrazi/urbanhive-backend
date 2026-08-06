@@ -1,5 +1,5 @@
 const express = require("express");
-const { registerVendor, loginVendor, updateStoreDetails, addProduct, getVendorProducts, updateProduct, deleteProduct, getVendorOrders, updateOrderStatus, uploadImageMiddleware, getproduct, getVendorStats } = require("../controllers/vendorController");
+const { registerVendor, loginVendor, updateStoreDetails, getVendorProfile, addProduct, getVendorProducts, updateProduct, deleteProduct, getVendorOrders, updateOrderStatus, uploadImageMiddleware, getproduct, getVendorStats } = require("../controllers/vendorController");
 
 
 const router = express.Router();
@@ -15,6 +15,7 @@ router.get("/dashboard/:vendorId", authMiddleware, requireRole('vendor'), getVen
 
 // Vendor store management
 router.put("/update", authMiddleware, requireRole('vendor'), updateStoreDetails);
+router.get('/profile', authMiddleware, requireRole('vendor'), getVendorProfile);
 
 // Product management
 router.post("/add-product", authMiddleware, requireRole('vendor'), uploadImageMiddleware, addProduct);
