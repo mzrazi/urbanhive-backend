@@ -21,7 +21,18 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      return cb(new Error('Only JPG, PNG, and WEBP images are allowed.'));
+    }
+    cb(null, true);
+  },
+});
 
 
 // Vendor Registration
@@ -80,6 +91,9 @@ const loginVendor = async (req, res) => {
       if (!vendor.approvedByAdmin) {
         return res.status(403).json({ message: "Your account is pending approval. Please contact the admin." });
       }
+      if (vendor.isBlocked) {
+        return res.status(403).json({ message: 'This vendor account has been blocked.' });
+      }
   
       // Check if the password is correct
       const isMatch = await bcrypt.compare(password, vendor.password);
@@ -107,7 +121,7 @@ const updateStoreDetails = async (req, res) => {
         const { storeName, storeAddress, phone, category, location } = req.body;
         const updates = { storeName, storeAddress, phone, category, location };
         Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
-        const vendor = await Vendor.findByIdAndUpdate(req.user.id, updates, { new: true }).select('-password');
+        const vendor = await Vendor.findByIdAndUpdate(req.user.id, updates, { new: true, runValidators: true }).select('-password');
         res.json({ message: "Store details updated", vendor });
     } catch (error) {
         res.status(500).json({ message: "Server error" });
@@ -195,7 +209,7 @@ const updateProduct = async (req, res) => {
         const { name, price, description, category } = req.body;
         const updates = { name, price, description, category };
         Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
-        const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updates, { new: true });
+        const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
         
         res.json({ message: "Product updated", product: updatedProduct });
     } catch (error) {
@@ -224,7 +238,7 @@ const deleteProduct = async (req, res) => {
 // Get Vendor Orders
 const getVendorOrders = async (req, res) => {
     try {
-        const orders = await Order.find({ vendor: req.user.id }).populate("products.productId");
+        const orders = await Order.find({ vendor: req.user.id, paymentStatus: 'Successful' }).populate("products.productId");
       
       
         res.json(orders);
@@ -277,7 +291,7 @@ const getVendorStats = async (req, res) => {
     }
 
     // 2. Get the total number of orders for the vendor
-    const totalOrders = await Order.countDocuments({ vendor: vendorId });
+    const totalOrders = await Order.countDocuments({ vendor: vendorId, paymentStatus: 'Successful' });
 
     // 3. Get the total number of products for the vendor
     const totalProducts = await Product.countDocuments({ vendor: vendorId });
@@ -286,7 +300,7 @@ const getVendorStats = async (req, res) => {
     const totalUsers = await User.countDocuments();
 
     // 5. Calculate total revenue for the vendor (sum of all amounts in the orders)
-    const orders = await Order.find({ vendor: vendorId });
+    const orders = await Order.find({ vendor: vendorId, paymentStatus: 'Successful' });
     const totalRevenue = orders.reduce((sum, order) => sum + order.totalAmount, 0);
 
     // 6. Calculate the average rating for the vendor

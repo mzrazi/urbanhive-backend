@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  phone: { type: String, required: true },  // Added phone number
-  address: { type: String, required: true }, // Added address
+  name: { type: String, required: true, trim: true },
+  email: { type: String, required: true, unique: true, trim: true, lowercase: true },
+  password: { type: String, required: true, minlength: 6 },
+  phone: { type: String, required: true, trim: true },  // Added phone number
+  address: { type: String, required: true, trim: true }, // Added address
+  isBlocked: { type: Boolean, default: false },
   passwordResetToken: String,
   passwordResetExpires: Date,
   cart: [{ 

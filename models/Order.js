@@ -22,7 +22,7 @@ const orderSchema = new mongoose.Schema(
       enum: ["Pending", "Successful", "Failed"], 
       default: "Pending",
     },
-    razorpayOrderId: { type: String, required: true }, // Store Razorpay order ID directly
+    razorpayOrderId: { type: String, required: true, unique: true }, // Store Razorpay order ID directly
     paymentDetails: {
       razorpayPaymentId: String,
       razorpaySignature: String,

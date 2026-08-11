@@ -143,7 +143,7 @@ const deleteComplaint = async (req, res) => {
 // 📌 Order Management
 const getOrders = async (req, res) => {
   try {
-    const orders = await Order.find().populate('user', '-password').populate('vendor', '-password');
+    const orders = await Order.find({ paymentStatus: 'Successful' }).populate('user', '-password').populate('vendor', '-password');
     res.status(200).json(orders);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching orders', error });
@@ -283,11 +283,12 @@ const getDashboardStats = async (req, res) => {
   try {
     const vendorCount = await Vendor.countDocuments();
     const userCount = await User.countDocuments();
-    const orderCount = await Order.countDocuments();
+    const orderCount = await Order.countDocuments({ paymentStatus: 'Successful' });
     const complaintCount = await Complaint.countDocuments();
 
     
     const totalRevenueResult = await Order.aggregate([
+      { $match: { paymentStatus: 'Successful' } },
       {
         $group: {
           _id: null,

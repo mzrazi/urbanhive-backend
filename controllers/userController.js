@@ -14,6 +14,10 @@ const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET
 });
+const configuredMaxDeliveryDistanceKm = Number(process.env.MAX_DELIVERY_DISTANCE_KM || 2000);
+const maxDeliveryDistanceKm = Number.isFinite(configuredMaxDeliveryDistanceKm) && configuredMaxDeliveryDistanceKm > 0
+  ? configuredMaxDeliveryDistanceKm
+  : 2000;
 
 
 
@@ -64,7 +68,14 @@ const registerUser = async (req, res) => {
         return res.json({ cart: [], subtotal: 0, discount: 0, deliveryCharge: 0, grandTotal: 0 });
       }
 
-      const vendorid = user.cart[0].product.vendor.toString();
+      const validCart = user.cart.filter((item) => item.product);
+      if (validCart.length !== user.cart.length) {
+        user.cart = validCart.map((item) => ({ product: item.product._id, quantity: item.quantity }));
+        await user.save();
+      }
+      if (validCart.length === 0) return res.json({ cart: [], subtotal: 0, discount: 0, deliveryCharge: 0, grandTotal: 0 });
+
+      const vendorid = validCart[0].product.vendor.toString();
       // Fetch vendor details
       const vendor = await Vendor.findById(vendorid);
      
@@ -82,12 +93,12 @@ const registerUser = async (req, res) => {
       const deliveryCharge = calculateDeliveryCharge(distance);
   
       // Calculate Subtotal & Discount
-      const subtotal = user.cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
+      const subtotal = validCart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
       let discount = subtotal > 500 ? 50 : subtotal > 300 ? 30 : 10;
   
       // Send all cart data in one response
       res.json({
-        cart: user.cart,
+        cart: validCart,
         subtotal,
         discount,
         deliveryCharge,
@@ -129,6 +140,7 @@ const loginUser = async (req, res) => {
 
     if (!user) return res.status(404).json({ message: 'User not found' });
 
+    if (user.isBlocked) return res.status(403).json({ message: 'This account has been blocked.' });
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
 
@@ -202,15 +214,22 @@ const changeUserPassword = async (req, res) => {
 
 const addToCart = async (req, res) => {
   try {
-    const { productId } = req.body;
+    const { productId, quantity = 1 } = req.body;
     const userid = req.user.id;
+    const safeQuantity = Number(quantity);
+    if (!Number.isInteger(safeQuantity) || safeQuantity < 1 || safeQuantity > 99) {
+      return res.status(400).json({ message: 'Quantity must be a whole number between 1 and 99.' });
+    }
+
+    const product = await Product.findById(productId);
+    if (!product) return res.status(404).json({ message: 'Product not found.' });
 
     // 1. Find the user
     const user = await User.findById(userid);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     // 2. Add the new item to cart
-    user.cart.push({ product: productId, quantity: 1 });
+    user.cart.push({ product: productId, quantity: safeQuantity });
 
     // 3. Save the updated user document
     await user.save();
@@ -307,6 +326,10 @@ const updateCartItem = async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
    
     const { productid, quantity } = req.body;
+    const safeQuantity = Number(quantity);
+    if (!Number.isInteger(safeQuantity) || safeQuantity < 1 || safeQuantity > 99) {
+      return res.status(400).json({ message: 'Quantity must be a whole number between 1 and 99.' });
+    }
 
 
     // Check if product exists in cart
@@ -317,7 +340,7 @@ const updateCartItem = async (req, res) => {
     if (!cartItem) return res.status(404).json({ message: 'Product not found in cart' });
 
     // Update quantity
-    cartItem.quantity = quantity;
+    cartItem.quantity = safeQuantity;
     await user.save();
 
     res.json({ message: 'Cart updated successfully', cart: user.cart });
@@ -344,7 +367,7 @@ const getOrderHistory = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const orders = await Order.find({ user: userId })
+    const orders = await Order.find({ user: userId, paymentStatus: 'Successful' })
     .populate('user', 'name email phone')  
     .populate('vendor', 'name email phone address')
     .populate('products.productId', 'name price image') // Populate product details
@@ -380,7 +403,7 @@ const getNearbyVendors = async (req, res) => {
    
     
 
-    if (!lat || !lng) {
+    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
       return res.status(400).json({ error: "Latitude and Longitude are required" });
     }
 
@@ -392,8 +415,7 @@ const getNearbyVendors = async (req, res) => {
             type: "Point",
             coordinates: [parseFloat(lng), parseFloat(lat)],
           },
-         $maxDistance: 2000000 // 2000 km (approx all-India coverage)
-, 
+         $maxDistance: maxDeliveryDistanceKm * 1000,
         },
       },
     });
@@ -422,16 +444,23 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ message: 'Cart is empty.' });
     }
 
-    const cartVendorId = user.cart[0].product.vendor.toString();
-    if (user.cart.some((item) => item.product.vendor.toString() !== cartVendorId)) {
+    const validCart = user.cart.filter((item) => item.product);
+    if (validCart.length !== user.cart.length) {
+      user.cart = validCart.map((item) => ({ product: item.product._id, quantity: item.quantity }));
+      await user.save();
+    }
+    if (validCart.length === 0) return res.status(400).json({ message: 'Cart is empty.' });
+
+    const cartVendorId = validCart[0].product.vendor.toString();
+    if (validCart.some((item) => item.product.vendor.toString() !== cartVendorId)) {
       return res.status(400).json({ message: 'Checkout supports one vendor per order.' });
     }
 
-    const cartProducts = user.cart.map((item) => ({
+    const cartProducts = validCart.map((item) => ({
       productId: item.product._id,
       quantity: item.quantity,
     }));
-    const subtotal = user.cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const subtotal = validCart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
     const discount = subtotal > 500 ? 50 : subtotal > 300 ? 30 : 10;
     const vendor = await Vendor.findById(cartVendorId);
     if (!vendor || !vendor.location) {
@@ -443,9 +472,12 @@ const createOrder = async (req, res) => {
     const distance = hasCustomerLocation
       ? calculateDistance(Number(lat), Number(lng), vendorLat, vendorLng)
       : 0;
-
     const deliveryCharge = calculateDeliveryCharge(distance);
     const calculatedTotal = Math.max(0, subtotal + deliveryCharge - discount);
+
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      return res.status(503).json({ message: 'Payments are not configured yet.' });
+    }
 
     // Create Razorpay order
     const options = {
@@ -511,6 +543,8 @@ const saveOrder = async (req, res) => {
       return res.status(403).json({ error: 'Access denied.' });
     }
 
+    if (order.paymentStatus === 'Successful') return res.json(order);
+
     order.paymentStatus = "Successful";
     order.paymentDetails = {
       razorpayPaymentId: razorpay_payment_id,
@@ -521,10 +555,8 @@ const saveOrder = async (req, res) => {
 
     const user = await User.findById(order.user);
     if (user) {
-      // console.log("called",user);
-      
-      // Assuming the cart is stored in user.cart (you may adjust this based on your schema)
-      user.cart = [];
+      const orderedProductIds = new Set(order.products.map((item) => item.productId.toString()));
+      user.cart = user.cart.filter((item) => !orderedProductIds.has(item.product.toString()));
       await user.save();
     }
 
@@ -599,16 +631,80 @@ const OrderRating = async (req, res) => {
 };
 
 
-// Function to get random featured products
-const getRandomProducts = async (count) => {
-  const products = await Product.find({ }).populate('vendor');
+const getNearbyVendorIds = async (lat, lng) => {
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
+
+  const vendors = await Vendor.find({
+    location: {
+      $near: {
+        $geometry: { type: 'Point', coordinates: [longitude, latitude] },
+        $maxDistance: maxDeliveryDistanceKm * 1000,
+      },
+    },
+  }).select('_id');
+
+  return vendors.map((vendor) => vendor._id);
+};
+
+// Function to get random featured products from vendors in the selected area
+const getRandomProducts = async (count, vendorIds) => {
+  if (!vendorIds.length) return [];
+  const products = await Product.find({ vendor: { $in: vendorIds } }).populate('vendor');
   const shuffled = products.sort(() => 0.5 - Math.random()); // Shuffle the array
   return shuffled.slice(0, count); // Return 'count' number of products
 };
 
-// Function to get popular vendors (sorted by rating)
-const getPopularVendors = async (count) => {
-  return await Vendor.find().sort({ averageRating: -1 }).limit(count);
+// Function to get popular vendors from the selected area (sorted by rating)
+const getPopularVendors = async (count, vendorIds) => {
+  if (!vendorIds.length) return [];
+  return await Vendor.find({ _id: { $in: vendorIds } }).sort({ averageRating: -1 }).limit(count);
+};
+
+const handleRazorpayWebhook = async (req, res) => {
+  try {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const signature = req.header('x-razorpay-signature');
+    if (!webhookSecret || !signature || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ message: 'Invalid payment webhook.' });
+    }
+
+    const expectedSignature = crypto.createHmac('sha256', webhookSecret).update(req.body).digest('hex');
+    const signaturesMatch = signature.length === expectedSignature.length
+      && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+    if (!signaturesMatch) return res.status(400).json({ message: 'Invalid payment webhook signature.' });
+
+    const payload = JSON.parse(req.body.toString('utf8'));
+    const payment = payload?.payload?.payment?.entity;
+    if (!payment?.order_id) return res.status(200).json({ received: true });
+
+    const order = await Order.findOne({ razorpayOrderId: payment.order_id });
+    if (!order) return res.status(200).json({ received: true });
+
+    if (payload.event === 'payment.captured' && payment.status === 'captured') {
+      if (order.paymentStatus !== 'Successful') {
+        order.paymentStatus = 'Successful';
+        order.paymentDetails = { razorpayPaymentId: payment.id };
+        await order.save();
+
+        const user = await User.findById(order.user);
+        if (user) {
+          const orderedProductIds = new Set(order.products.map((item) => item.productId.toString()));
+          user.cart = user.cart.filter((item) => !orderedProductIds.has(item.product.toString()));
+          await user.save();
+        }
+      }
+    } else if (payload.event === 'payment.failed' && order.paymentStatus === 'Pending') {
+      order.paymentStatus = 'Failed';
+      await order.save();
+    }
+
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('Razorpay webhook failed:', error);
+    res.status(500).json({ message: 'Could not process payment webhook.' });
+  }
 };
 
 const searchMarketplace = async (req, res) => {
@@ -689,8 +785,8 @@ const getComplaintHistory = async (req, res) => {
 
 // Export all functions
 module.exports = {
-  submitComplaint, getComplaintHistory,
-  getRandomProducts,getPopularVendors,
+  submitComplaint, getComplaintHistory, handleRazorpayWebhook,
+  getRandomProducts,getPopularVendors,getNearbyVendorIds,
   saveOrder,
   createOrder,
   getNearbyVendors,
